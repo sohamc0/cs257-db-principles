@@ -1,0 +1,288 @@
+/****************************************************************************
+** (c) Copyright IBM Corp. 2007 All rights reserved.
+** 
+** The following sample of source code ("Sample") is owned by International 
+** Business Machines Corporation or one of its subsidiaries ("IBM") and is 
+** copyrighted and licensed, not sold. You may use, copy, modify, and 
+** distribute the Sample in any form without payment to IBM, for the purpose of 
+** assisting you in the development of your applications.
+** 
+** The Sample code is provided to you on an "AS IS" basis, without warranty of 
+** any kind. IBM HEREBY EXPRESSLY DISCLAIMS ALL WARRANTIES, EITHER EXPRESS OR 
+** IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
+** MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. Some jurisdictions do 
+** not allow for the exclusion or limitation of implied warranties, so the above 
+** limitations or exclusions may not apply to you. IBM shall not be liable for 
+** any damages you suffer as a result of using, copying, modifying or 
+** distributing the Sample, even if IBM has been advised of the possibility of 
+** such damages.
+*****************************************************************************
+**
+** SOURCE FILE NAME: tbinfo.sqc
+**
+** SAMPLE: How to get information at the table level
+**
+** SQL STATEMENTS USED:
+**         SELECT
+**         DECLARE CURSOR
+**         OPEN
+**         FETCH
+**         CLOSE
+**
+** OUTPUT FILE: tbinfo.out (available in the online documentation)
+*****************************************************************************
+**
+** For more information on the sample programs, see the README file.
+**
+** For information on developing C applications, see the Application
+** Development Guide.
+**
+** For information on using SQL statements, see the SQL Reference.
+**
+** For the latest information on programming, building, and running DB2 
+** applications, visit the DB2 application development website: 
+**     http://www.software.ibm.com/data/db2/udb/ad
+****************************************************************************/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sqlenv.h>
+#include <sqlutil.h>
+// #include "utilemb.h"
+
+int display_department_table(void);
+int display_employee_table(void);
+int join_tables(void);
+
+EXEC SQL BEGIN DECLARE SECTION;
+  char dbAlias[15];
+  char deptartment_tableName[128];
+  char employee_tableName[128];
+  char schemaName[128];
+
+  //dept column names...
+  char dept_no[3];
+  char dept_name[29];
+  char dept_mgr_no[6];
+  char dept_admin_dep[3];
+  char dept_location[16];
+
+  //employee column names...
+  char emp_first_name[12];
+  char emp_last_name[15];
+  char emp_mid_init[1];
+  char emp_sex[1];
+  double emp_bonus;
+  double emp_comm;
+  double emp_sal;
+EXEC SQL END DECLARE SECTION;
+
+int main(int argc, char *argv[])
+{
+  int rc = 0;
+  struct sqlca sqlca;
+
+  
+  /* check the command line arguments */
+  if (argc < 2)
+  {
+//    printf("Usage sample2 dbAlias, userId, password");
+    printf("Usage sample2 dbAlias");
+  }
+  else
+  {
+    strcpy(dbAlias, argv[1]);
+//    strcpy(user, argv[2]);
+//    strcpy(pswd, argv[3]);
+
+
+    /* connect to the database */
+    printf("\n  Connecting to '%s' database...\n", dbAlias);
+    
+/*     EXEC SQL CONNECT TO :dbAlias USER :user USING :pswd; */
+
+    EXEC SQL CONNECT TO :dbAlias;
+  
+    printf("  Connected to '%s' database.\n", dbAlias);
+
+    strcpy(employee_tableName, "EMPLOYEE");
+    strcpy(deptartment_tableName, "DEPARTMENT");
+    strcpy(schemaName, "DB2INST1");
+
+    rc = display_department_table();
+    rc = display_employee_table();
+    rc = join_tables();
+
+    /* disconnect from the database */
+    EXEC SQL CONNECT RESET;
+  }
+    return 0;
+} /* end main */
+
+int display_department_table(void)
+{
+    struct sqlca sqlca;
+
+    EXEC SQL DECLARE c1 CURSOR FOR
+        SELECT * FROM DEPARTMENT;
+
+    EXEC SQL OPEN c1;
+  /* EMB_SQL_CHECK("Cursor -- Open"); */
+
+  EXEC SQL FETCH c1 INTO :dept_no, :dept_name, :dept_mgr_no, :dept_admin_dep, :dept_location;
+  /* EMB_SQL_CHECK("Cursor -- Fetch"); */
+
+  if (sqlca.sqlcode == 100)
+  {
+    printf("\n  Data not found.\n");
+  }
+  else{
+    printf("DEPARTMENT table\n");
+    printf("DEPTNO DEPTNAME                      MGRNO  ADMRDEPT LOCATION\n");
+  }
+
+  while (sqlca.sqlcode != 100)
+  {
+    printf("   %-3.3s %-29.29s", dept_no, dept_name);
+
+    if (dept_mgr_no != 0)
+    {
+      printf(" %-6.6s", dept_mgr_no);
+      strcpy(dept_mgr_no, "");
+    }
+    else
+    {
+      printf("       ");
+    }
+
+    printf(" %-3.3s", dept_admin_dep);
+
+    if (dept_location != 0)
+    {
+      printf(" %-16.16s\n", dept_location);
+      strcpy(dept_location, "");
+
+    }
+    else
+    {
+      printf("       \n");
+    }
+
+    EXEC SQL FETCH c1 INTO :dept_no, :dept_name, :dept_mgr_no, :dept_admin_dep, :dept_location;
+    /* EMB_SQL_CHECK("Cursor -- Fetch"); */
+  }
+  printf("\n");
+
+  EXEC SQL CLOSE c1;
+  /* EMB_SQL_CHECK("Cursor -- Close"); */
+
+  return 0;
+}
+
+int display_employee_table(void)
+{
+    struct sqlca sqlca;
+
+    EXEC SQL DECLARE c2 CURSOR FOR
+        SELECT FIRSTNME, LASTNAME, MIDINIT, SEX, BONUS, COMM, SALARY FROM EMPLOYEE;
+
+    EXEC SQL OPEN c2;
+  /* EMB_SQL_CHECK("Cursor -- Open"); */
+
+  EXEC SQL FETCH c2 INTO :emp_first_name, :emp_last_name, :emp_mid_init, :emp_sex, :emp_bonus, :emp_comm, :emp_sal;
+  /* EMB_SQL_CHECK("Cursor -- Fetch"); */
+
+  if (sqlca.sqlcode == 100)
+  {
+    printf("\n  Data not found.\n");
+  }
+  else{
+    printf("EMPLOYEE table\n");
+    printf("    FIRSTNME     LASTNAME        M S BONUS      COMM        SALARY\n");
+  }
+
+  while (sqlca.sqlcode != 100)
+  {
+    printf("    %-12.12s %-15.15s %-1.1s", emp_first_name, emp_last_name, emp_mid_init);
+    if (emp_sex != 0)
+    {
+      printf(" %-1.1s", emp_sex);
+      strcpy(emp_sex, "");
+    }
+    else
+    {
+      printf("  ");
+    }
+    printf(" %f %f %f\n", emp_bonus, emp_comm, emp_sal);
+
+    EXEC SQL FETCH c2 INTO :emp_first_name, :emp_last_name, :emp_mid_init, :emp_sex, :emp_bonus, :emp_comm, :emp_sal;
+  }
+  printf("\n");
+  EXEC SQL CLOSE c2;
+  /* EMB_SQL_CHECK("Cursor -- Close"); */
+
+  return 0;
+}
+
+int join_tables(void)
+{
+    struct sqlca sqlca;
+
+    EXEC SQL DECLARE c3 CURSOR FOR
+        SELECT FIRSTNME, LASTNAME, WORKDEPT, DEPTNAME, MGRNO FROM EMPLOYEE LEFT JOIN DEPARTMENT ON WORKDEPT=DEPTNO;
+
+    EXEC SQL OPEN c3;
+  /* EMB_SQL_CHECK("Cursor -- Open"); */
+
+  EXEC SQL FETCH c3 INTO :emp_first_name, :emp_last_name, :dept_no, :dept_name, :dept_mgr_no;
+  /* EMB_SQL_CHECK("Cursor -- Fetch"); */
+
+  if (sqlca.sqlcode == 100)
+  {
+    printf("\n  Data not found.\n");
+  }
+  else{
+    printf("JOINED table\n");
+    printf("    FIRSTNME     LASTNAME        DEP DEPARTMENT_NAME               MGRNO\n");
+  }
+
+  while (sqlca.sqlcode != 100)
+  {
+    printf("    %-12.12s %-15.15s", emp_first_name, emp_last_name);
+    if (dept_no != 0)
+    {
+        printf(" %-3.3s", dept_no);
+      strcpy(dept_no, "");
+    }
+    else{
+        printf("    ");
+    }
+
+    if (dept_name != 0)
+    {
+        printf(" %-29.29s", dept_name);
+      strcpy(dept_name, "");
+    }
+    else{
+        printf("                              ");
+    }
+
+    if (dept_mgr_no != 0)
+    {
+        printf(" %-6.6s\n", dept_mgr_no);
+      strcpy(dept_mgr_no, "");
+    }
+    else{
+        printf("       \n");
+    }
+
+    EXEC SQL FETCH c3 INTO :emp_first_name, :emp_last_name, :dept_no, :dept_name, :dept_mgr_no;
+  }
+    printf("\n");
+
+  EXEC SQL CLOSE c3;
+  /* EMB_SQL_CHECK("Cursor -- Close"); */
+
+  return 0;
+}
