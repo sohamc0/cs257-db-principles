@@ -23,13 +23,13 @@ int main(int argc, char** argv)
 
 	rc = initialize_tpd_list();
 
-  if (rc)
-  {
+	if (rc)
+	{
 		printf("\nError in initialize_tpd_list().\nrc = %d\n", rc);
-  }
+	}
 	else
 	{
-    rc = get_token(argv[1], &tok_list);
+    	rc = get_token(argv[1], &tok_list);
 
 		/* Test code */
 		tok_ptr = tok_list;
@@ -65,9 +65,9 @@ int main(int argc, char** argv)
 		tok_ptr = tok_list;
 		while (tok_ptr != NULL)
 		{
-      tmp_tok_ptr = tok_ptr->next;
-      free(tok_ptr);
-      tok_ptr=tmp_tok_ptr;
+			tmp_tok_ptr = tok_ptr->next;
+			free(tok_ptr);
+			tok_ptr=tmp_tok_ptr;
 		}
 	}
 
@@ -89,7 +89,7 @@ int get_token(char* command, token_list** tok_list)
 		bool found_keyword = false;
 
 		/* This is the TOP Level for each token */
-	  memset ((void*)temp_string, '\0', MAX_TOK_LEN);
+		memset ((void*)temp_string, '\0', MAX_TOK_LEN);
 		i = 0;
 
 		/* Get rid of all the leading blanks */
@@ -132,19 +132,19 @@ int get_token(char* command, token_list** tok_list)
 
 				if (found_keyword)
 				{
-				  if (KEYWORD_OFFSET+j < K_CREATE)
+					if (KEYWORD_OFFSET+j < K_CREATE)
 						t_class = type_name;
 					else if (KEYWORD_OFFSET+j >= F_SUM)
-            t_class = function_name;
-          else
-					  t_class = keyword;
+            			t_class = function_name;
+          			else
+					 	t_class = keyword;
 
 					add_to_list(tok_list, temp_string, t_class, KEYWORD_OFFSET+j);
 				}
 				else
 				{
 					if (strlen(temp_string) <= MAX_IDENT_LEN)
-					  add_to_list(tok_list, temp_string, identifier, IDENT);
+						add_to_list(tok_list, temp_string, identifier, IDENT);
 					else
 					{
 						add_to_list(tok_list, temp_string, error, INVALID);
@@ -216,18 +216,18 @@ int get_token(char* command, token_list** tok_list)
 				done = true;
 			}
 		}
-    else if (*cur == '\'')
-    {
-      /* Find STRING_LITERRAL */
+	    else if (*cur == '\'')
+	    {
+	      /* Find STRING_LITERRAL */
 			int t_class;
-      cur++;
+	      	cur++;
 			do 
 			{
 				temp_string[i++] = *cur++;
 			}
 			while ((*cur) && (*cur != '\''));
 
-      temp_string[i] = '\0';
+	    	temp_string[i] = '\0';
 
 			if (!*cur)
 			{
@@ -236,17 +236,17 @@ int get_token(char* command, token_list** tok_list)
 				rc = INVALID;
 				done = true;
 			}
-      else /* must be a ' */
-      {
-        add_to_list(tok_list, temp_string, constant, STRING_LITERAL);
-        cur++;
+			else /* must be a ' */
+			{
+				add_to_list(tok_list, temp_string, constant, STRING_LITERAL);
+				cur++;
 				if (!*cur)
 				{
 					add_to_list(tok_list, "", terminator, EOC);
 					done = true;
-        }
-      }
-    }
+				}
+			}
+	    }
 		else
 		{
 			if (!*cur)
@@ -265,7 +265,7 @@ int get_token(char* command, token_list** tok_list)
 		}
 	}
 			
-  return rc;
+	return rc;
 }
 
 void add_to_list(token_list **tok_list, char *tmp, int t_class, int t_value)
@@ -328,7 +328,7 @@ int do_semantic(token_list *tok_list)
 		cur = cur->next->next;
 	}
 	else
-  {
+  	{
 		printf("Invalid statement\n");
 		rc = cur_cmd;
 	}
