@@ -366,7 +366,12 @@ int sem_create_table(token_list *t_list)
 	bool column_done = false;
 	int cur_id = 0;
 	cd_entry	col_entry[MAX_NUM_COL];
-
+	/* step 1 added variables*/
+	FILE *fhandle = NULL;
+	int record_size = 0;
+	char* tbl_name = NULL;
+	char* dot_tbl = NULL;
+	table_file_header tfh;
 
 	memset(&tab_entry, '\0', sizeof(tpd_entry));
 	cur = t_list;
@@ -453,7 +458,7 @@ int sem_create_table(token_list *t_list)
 										rc = INVALID_COLUMN_DEFINITION;
 										cur->tok_value = INVALID;
 									}
-								  else
+								  	else
 									{
 										col_entry[cur_id].col_len = sizeof(int);
 										
@@ -480,10 +485,11 @@ int sem_create_table(token_list *t_list)
 												cur->tok_value = INVALID;
 											}
 											else
-		                  {
+		                  					{
 												if (cur->tok_value == S_RIGHT_PAREN)
 												{
  													column_done = true;
+													record_size += 5; /* 1 + 4 bytes for int */
 												}
 												cur = cur->next;
 											}
@@ -512,6 +518,7 @@ int sem_create_table(token_list *t_list)
 										{
 											/* Got a valid integer - convert */
 											col_entry[cur_id].col_len = atoi(cur->tok_string);
+											record_size += 1 + col_entry[cur_id].col_len;
 											cur = cur->next;
 											
 											if (cur->tok_value != S_RIGHT_PAREN)
@@ -548,7 +555,7 @@ int sem_create_table(token_list *t_list)
 													if (!rc)
 													{
 														/* I must have either a comma or right paren */
-														if ((cur->tok_value != S_RIGHT_PAREN) &&															  (cur->tok_value != S_COMMA))
+														if ((cur->tok_value != S_RIGHT_PAREN) && (cur->tok_value != S_COMMA))
 														{
 															rc = INVALID_COLUMN_DEFINITION;
 															cur->tok_value = INVALID;
@@ -589,9 +596,8 @@ int sem_create_table(token_list *t_list)
 				{
 					/* Now finished building tpd and add it to the tpd list */
 					tab_entry.num_columns = cur_id;
-					tab_entry.tpd_size = sizeof(tpd_entry) + 
-															 sizeof(cd_entry) *	tab_entry.num_columns;
-				  tab_entry.cd_offset = sizeof(tpd_entry);
+					tab_entry.tpd_size = sizeof(tpd_entry) + sizeof(cd_entry) *	tab_entry.num_columns;
+				  	tab_entry.cd_offset = sizeof(tpd_entry);
 					new_entry = (tpd_entry*)calloc(1, tab_entry.tpd_size);
 
 					if (new_entry == NULL)
@@ -611,6 +617,25 @@ int sem_create_table(token_list *t_list)
 						rc = add_tpd_to_list(new_entry);
 
 						free(new_entry);
+
+						/* also adding file <table_name>.tab */
+						if (record_size % 4 != 0)
+						{
+							record_size += (4 - (record_size % 4));
+						}
+						tbl_name = (char*)malloc(1 + strlen(tpd_entry.table_name) + 4, sizeof(char));
+						strcpy(tbl_name, tpd_entry.table_name);
+						dot_tbl = (char*)malloc(5, sizeof(char));
+						strcpy(dot_tbl, ".tab");
+						strncat(tbl_name, dot_tbl, 4);
+
+						memset(&tfh, '\0', sizeof(table_file_header));
+						tfh.file_size = sizeof(table_file_header) + (100 * record_size);
+						tfh.record_size = record_size;
+						tfh.num_records = 0;
+						tfh.tpd_ptr = 
+
+						fhandle.open();
 					}
 				}
 			}
@@ -836,7 +861,7 @@ int initialize_tpd_list()
 {
 	int rc = 0;
 	FILE *fhandle = NULL;
-	//	struct _stat file_stat;
+//	struct _stat file_stat;
 	struct stat file_stat;
 
   /* Open for read */
@@ -867,7 +892,7 @@ int initialize_tpd_list()
 	else
 	{
 		/* There is a valid dbfile.bin file - get file size */
-	//		_fstat(_fileno(fhandle), &file_stat);
+//		_fstat(_fileno(fhandle), &file_stat);
 		fstat(fileno(fhandle), &file_stat);
 		printf("dbfile.bin size = %d\n", file_stat.st_size);
 
