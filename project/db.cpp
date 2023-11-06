@@ -836,7 +836,7 @@ int initialize_tpd_list()
 {
 	int rc = 0;
 	FILE *fhandle = NULL;
-//	struct _stat file_stat;
+	//	struct _stat file_stat;
 	struct stat file_stat;
 
   /* Open for read */
@@ -867,7 +867,7 @@ int initialize_tpd_list()
 	else
 	{
 		/* There is a valid dbfile.bin file - get file size */
-//		_fstat(_fileno(fhandle), &file_stat);
+	//		_fstat(_fileno(fhandle), &file_stat);
 		fstat(fileno(fhandle), &file_stat);
 		printf("dbfile.bin size = %d\n", file_stat.st_size);
 
