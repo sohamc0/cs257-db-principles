@@ -366,12 +366,13 @@ int sem_create_table(token_list *t_list)
 	bool column_done = false;
 	int cur_id = 0;
 	cd_entry	col_entry[MAX_NUM_COL];
-	/* step 1 added variables*/
+	/* step 1's added variables*/
 	FILE *fhandle = NULL;
 	int record_size = 0;
-	char* tbl_name = NULL;
+	char* tbl_file_name = NULL;
 	char* dot_tbl = NULL;
 	table_file_header tfh;
+	void* file_content = NULL;
 
 	memset(&tab_entry, '\0', sizeof(tpd_entry));
 	cur = t_list;
@@ -460,6 +461,7 @@ int sem_create_table(token_list *t_list)
 									}
 								  	else
 									{
+										record_size += 5; /* 1 + 4 bytes for int */
 										col_entry[cur_id].col_len = sizeof(int);
 										
 										if ((cur->tok_value == K_NOT) &&
@@ -489,7 +491,6 @@ int sem_create_table(token_list *t_list)
 												if (cur->tok_value == S_RIGHT_PAREN)
 												{
  													column_done = true;
-													record_size += 5; /* 1 + 4 bytes for int */
 												}
 												cur = cur->next;
 											}
@@ -619,23 +620,46 @@ int sem_create_table(token_list *t_list)
 						free(new_entry);
 
 						/* also adding file <table_name>.tab */
-						if (record_size % 4 != 0)
+						if ((record_size % 4) != 0)
 						{
 							record_size += (4 - (record_size % 4));
 						}
-						tbl_name = (char*)malloc(1 + strlen(tpd_entry.table_name) + 4, sizeof(char));
-						strcpy(tbl_name, tpd_entry.table_name);
-						dot_tbl = (char*)malloc(5, sizeof(char));
-						strcpy(dot_tbl, ".tab");
-						strncat(tbl_name, dot_tbl, 4);
 
-						memset(&tfh, '\0', sizeof(table_file_header));
-						tfh.file_size = sizeof(table_file_header) + (100 * record_size);
-						tfh.record_size = record_size;
-						tfh.num_records = 0;
-						tfh.tpd_ptr = 
+						tbl_file_name = (char*)calloc(1 + strlen(tab_entry.table_name) + 4, sizeof(char));
+						dot_tbl = (char*)calloc(5, sizeof(char));
+						if ((tbl_file_name == NULL) || (dot_tbl == NULL))
+						{
+							rc = MEMORY_ERROR;
+						}
+						else
+						{
+							strcpy(tbl_file_name, tab_entry.table_name);
+							strcpy(dot_tbl, ".tab");
+							strncat(tbl_file_name, dot_tbl, 4);
+							free(dot_tbl);
 
-						fhandle.open();
+							memset(&tfh, '\0', sizeof(table_file_header));
+							tfh.file_size = sizeof(table_file_header) + (100 * record_size);
+							tfh.record_size = record_size;
+							tfh.num_records = 0;
+							tfh.tpd_ptr = get_tpd_from_list(tab_entry.table_name);
+							tfh.record_offset = sizeof(table_file_header);
+
+							if((fhandle = fopen(tbl_file_name, "wbc")) == NULL)
+							{
+								rc = FILE_OPEN_ERROR;
+							}
+					    	else
+							{
+								free(tbl_file_name);
+								file_content = calloc(tfh.file_size, 1);
+								memcpy(file_content, (void *)&tfh, sizeof(table_file_header));
+								fwrite(file_content, tfh.file_size, 1, fhandle);
+								free(file_content);
+								fflush(fhandle);
+								fclose(fhandle);				
+							}
+						}
 					}
 				}
 			}
@@ -812,7 +836,7 @@ int sem_list_schema(token_list *t_list)
 						printf("Table Name               (table_name)  = %s\n", tab_entry->table_name);
 						printf("Number of Columns        (num_columns) = %d\n", tab_entry->num_columns);
 						printf("Column Descriptor Offset (cd_offset)   = %d\n", tab_entry->cd_offset);
-            printf("Table PD Flags           (tpd_flags)   = %d\n\n", tab_entry->tpd_flags); 
+            			printf("Table PD Flags           (tpd_flags)   = %d\n\n", tab_entry->tpd_flags); 
 
 						if (report)
 						{
@@ -820,7 +844,7 @@ int sem_list_schema(token_list *t_list)
 							fprintf(fhandle, "Table Name               (table_name)  = %s\n", tab_entry->table_name);
 							fprintf(fhandle, "Number of Columns        (num_columns) = %d\n", tab_entry->num_columns);
 							fprintf(fhandle, "Column Descriptor Offset (cd_offset)   = %d\n", tab_entry->cd_offset);
-              fprintf(fhandle, "Table PD Flags           (tpd_flags)   = %d\n\n", tab_entry->tpd_flags); 
+              				fprintf(fhandle, "Table PD Flags           (tpd_flags)   = %d\n\n", tab_entry->tpd_flags); 
 						}
 
 						/* Next, write the cd_entry information */
@@ -861,7 +885,7 @@ int initialize_tpd_list()
 {
 	int rc = 0;
 	FILE *fhandle = NULL;
-//	struct _stat file_stat;
+	//	struct _stat file_stat;
 	struct stat file_stat;
 
   /* Open for read */
@@ -871,7 +895,7 @@ int initialize_tpd_list()
 		{
 			rc = FILE_OPEN_ERROR;
 		}
-    else
+    	else
 		{
 			g_tpd_list = NULL;
 			g_tpd_list = (tpd_list*)calloc(1, sizeof(tpd_list));
@@ -892,7 +916,7 @@ int initialize_tpd_list()
 	else
 	{
 		/* There is a valid dbfile.bin file - get file size */
-//		_fstat(_fileno(fhandle), &file_stat);
+		//_fstat(_fileno(fhandle), &file_stat);
 		fstat(fileno(fhandle), &file_stat);
 		printf("dbfile.bin size = %d\n", file_stat.st_size);
 
@@ -929,7 +953,7 @@ int add_tpd_to_list(tpd_entry *tpd)
 	{
 		rc = FILE_OPEN_ERROR;
 	}
-  else
+ 	else
 	{
 		old_size = g_tpd_list->list_size;
 
@@ -939,6 +963,9 @@ int add_tpd_to_list(tpd_entry *tpd)
 			g_tpd_list->num_tables++;
 		 	g_tpd_list->list_size += (tpd->tpd_size - sizeof(tpd_entry));
 			fwrite(g_tpd_list, old_size - sizeof(tpd_entry), 1, fhandle);
+
+			// ADDED CODE
+			g_tpd_list->tpd_start = *tpd;
 		}
 		else
 		{
@@ -946,11 +973,18 @@ int add_tpd_to_list(tpd_entry *tpd)
 			g_tpd_list->num_tables++;
 		 	g_tpd_list->list_size += tpd->tpd_size;
 			fwrite(g_tpd_list, old_size, 1, fhandle);
+
+			/* TODO: add new tpd to g_tpd_list */
+			
 		}
 
-		fwrite(tpd, tpd->tpd_size, 1, fhandle);
-		fflush(fhandle);
-		fclose(fhandle);
+		if (rc == 0)
+		{
+			fwrite(tpd, tpd->tpd_size, 1, fhandle);
+			fflush(fhandle);
+			fclose(fhandle);
+		}
+		
 	}
 
 	return rc;

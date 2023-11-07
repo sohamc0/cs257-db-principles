@@ -37,7 +37,7 @@ typedef struct tpd_list_def
 	int				num_tables;
 	int				db_flags;
 	tpd_entry	tpd_start;
-}tpd_list;
+} tpd_list;
 
 /* This token_list definition is used for breaking the command
    string into separate tokens in function get_tokens().  For
