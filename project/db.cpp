@@ -701,6 +701,25 @@ int sem_drop_table(token_list *t_list)
 			{
 				/* Found a valid tpd, drop it from tpd list */
 				rc = drop_tpd_from_list(cur->tok_string);
+
+				// removing table file
+				if (rc == 0)
+				{
+					char* file_name = NULL;
+					file_name = (char *) calloc(1, strlen(cur->tok_string) + 5);
+					if (file_name == NULL)
+						rc = MEMORY_ERROR;
+					else
+					{
+						strcpy(file_name, cur->tok_string);
+						strcat(file_name + strlen(cur->tok_string), ".tab");
+
+						if (remove(file_name) != 0)
+							rc = FILE_OPEN_ERROR;
+						free(file_name);
+					}
+					
+				}
 			}
 		}
 	}
@@ -971,11 +990,23 @@ int add_tpd_to_list(tpd_entry *tpd)
 		{
 			/* There is at least 1, just append at the end */
 			g_tpd_list->num_tables++;
-		 	g_tpd_list->list_size += tpd->tpd_size;
-			fwrite(g_tpd_list, old_size, 1, fhandle);
-
-			/* TODO: add new tpd to g_tpd_list */
+			g_tpd_list->list_size += tpd->tpd_size;
 			
+			tpd_entry* combined_tables = (tpd_entry *) malloc(g_tpd_list->list_size - 12); // 12 is subtracted because of the 3 int fields part of tpd_list
+			if (combined_tables == NULL)
+			{
+				rc = MEMORY_ERROR;
+				g_tpd_list->num_tables--;
+				g_tpd_list->list_size -= tpd->tpd_size;
+			}
+			else
+			{
+				fwrite(g_tpd_list, old_size, 1, fhandle);
+
+				memcpy(combined_tables, &(g_tpd_list->tpd_start), g_tpd_list->list_size - 12 - tpd->tpd_size);
+				memcpy(combined_tables + g_tpd_list->list_size - 12 - tpd->tpd_size, tpd, tpd->tpd_size);
+				g_tpd_list->tpd_start = *combined_tables;
+			}
 		}
 
 		if (rc == 0)
@@ -1013,7 +1044,7 @@ int drop_tpd_from_list(char *tabname)
 				{
 					rc = FILE_OPEN_ERROR;
 				}
-			  else
+			  	else
 				{
 					old_size = g_tpd_list->list_size;
 
