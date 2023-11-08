@@ -327,6 +327,12 @@ int do_semantic(token_list *tok_list)
 		cur_cmd = LIST_SCHEMA;
 		cur = cur->next->next;
 	}
+	else if (cur->tok_value == K_SELECT)
+	{
+		printf("SELECT statement\n");
+		cur_cmd = SELECT;
+		cur = cur->next; // should be now the "*" character
+	}
 	else
   	{
 		printf("Invalid statement\n");
@@ -349,11 +355,108 @@ int do_semantic(token_list *tok_list)
 			case LIST_SCHEMA:
 						rc = sem_list_schema(cur);
 						break;
+			case SELECT:
+						rc = sem_select(cur);
+						break;		
 			default:
 					; /* no action */
 		}
 	}
 	
+	return rc;
+}
+
+int sem_select(token_list *t_list)
+{
+	// ONLY IMPLEMENTING SELECT *
+	int rc = 0;
+	token_list *cur;
+	FILE *fhandle = NULL;
+	tpd_entry* table = NULL;
+	struct stat file_stat;
+
+	cur = t_list;
+	if ((cur->tok_value != S_STAR))
+	{
+		// Error
+		rc = INVALID_TABLE_NAME;
+		cur->tok_value = INVALID;
+	}
+	else
+	{
+		//now let's check if next token is a valid table name
+		if ((cur->next == NULL) || ((cur->next->tok_class != keyword) && (cur->next->tok_class != identifier) && (cur->next->tok_class != type_name)) || (cur->next->tok_value == EOC))
+		{
+			rc = INVALID_STATEMENT;
+			cur->next->tok_value = INVALID;
+		}
+		else
+		{
+			cur = cur->next;
+			//now on table name
+			if (cur->next != EOC)
+			{
+				rc = INVALID_STATEMENT;
+				cur->next->tok_value = INVALID;
+			}
+			else
+			{
+				if ((table = get_tpd_from_list(cur->tok_string)) == NULL)
+				{
+					rc = TABLE_NOT_EXIST;
+					cur->tok_value = INVALID;
+				}
+				else
+				{
+					/* Found a valid tpd, now print all its tuples */
+					char* table_name = cur->tok_string;
+					char* file_name = (char *) malloc(strlen(table_name) + 5);
+					void* file_content = NULL;
+					table_file_header* header = NULL;
+					void* records = NULL;
+					strcpy(file_name, table_name);
+					strcat(file_name, ".tab");
+					if((fhandle = fopen(file_name, "rbc")) == NULL)
+						rc = FILE_OPEN_ERROR;
+					else
+					{
+						file_content = calloc(1, file_stat.st_size);
+						if (file_content == NULL)
+							rc = MEMORY_ERROR;
+						else
+						{
+							fread(file_content, file_stat.st_size, 1, fhandle);
+							memcpy(header, file_content, sizeof(table_file_header));
+							memcpy(records, file_content + sizeof(table_file_header), header->file_size - sizeof(table_file_header));
+
+							int col_types[table->num_columns];
+							int i;
+							cd_entry* cur_col = ((void *) table) + 36;
+							for (i = 0; i < table->num_columns; i++, cur_col += sizeof(cd_entry))
+								col_types[i] = cur_col->col_type;
+						
+							void* curr_record = records;
+							
+							for (i = 0; i < header->num_records; i++, curr_record += header->record_size) // for each record...
+							{
+								int j;
+								void* curr_value = curr_record;
+								for (j = 0; j < table->num_columns; j++)
+								{
+									if (col_types[i] == 10) // this is an INT
+										printf("", );
+									curr_value += 1 + curr_value;
+									// TODO
+								}
+								
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return rc;
 }
 
