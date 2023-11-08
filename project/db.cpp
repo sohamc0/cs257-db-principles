@@ -992,7 +992,7 @@ int add_tpd_to_list(tpd_entry *tpd)
 			g_tpd_list->num_tables++;
 			g_tpd_list->list_size += tpd->tpd_size;
 			
-			tpd_entry* combined_tables = (tpd_entry *) malloc(g_tpd_list->list_size - 12); // 12 is subtracted because of the 3 int fields part of tpd_list
+			void* combined_tables = malloc(g_tpd_list->list_size); // 12 is subtracted because of the 3 int fields part of tpd_list
 			if (combined_tables == NULL)
 			{
 				rc = MEMORY_ERROR;
@@ -1003,9 +1003,10 @@ int add_tpd_to_list(tpd_entry *tpd)
 			{
 				fwrite(g_tpd_list, old_size, 1, fhandle);
 
-				memcpy(combined_tables, &(g_tpd_list->tpd_start), g_tpd_list->list_size - 12 - tpd->tpd_size);
-				memcpy(combined_tables + g_tpd_list->list_size - 12 - tpd->tpd_size, tpd, tpd->tpd_size);
-				g_tpd_list->tpd_start = *combined_tables;
+				memcpy(combined_tables, g_tpd_list, g_tpd_list->list_size - tpd->tpd_size);
+				memcpy(combined_tables + g_tpd_list->list_size - tpd->tpd_size, tpd, tpd->tpd_size);
+				free(g_tpd_list);
+				g_tpd_list = (tpd_list *) combined_tables;
 			}
 		}
 
