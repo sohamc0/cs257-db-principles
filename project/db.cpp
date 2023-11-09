@@ -376,7 +376,7 @@ int sem_select(token_list *t_list)
 	struct stat file_stat;
 
 	cur = t_list;
-	if ((cur->tok_value != S_STAR))
+	if ((cur->tok_value != S_STAR) || (cur->next == NULL) || (cur->next->tok_value != K_FROM))
 	{
 		// Error
 		rc = INVALID_TABLE_NAME;
@@ -384,6 +384,9 @@ int sem_select(token_list *t_list)
 	}
 	else
 	{
+		cur = cur->next;
+		// now we are on the "FROM" token
+
 		//now let's check if next token is a valid table name
 		if ((cur->next == NULL) || ((cur->next->tok_class != keyword) && (cur->next->tok_class != identifier) && (cur->next->tok_class != type_name)) || (cur->next->tok_value == EOC))
 		{
@@ -394,7 +397,7 @@ int sem_select(token_list *t_list)
 		{
 			cur = cur->next;
 			//now on table name
-			if (cur->next != EOC)
+			if (cur->next->tok_value != EOC)
 			{
 				rc = INVALID_STATEMENT;
 				cur->next->tok_value = INVALID;
@@ -426,12 +429,15 @@ int sem_select(token_list *t_list)
 						else
 						{
 							fread(file_content, file_stat.st_size, 1, fhandle);
+
+							header = (table_file_header*) malloc(sizeof(table_file_header));
 							memcpy(header, file_content, sizeof(table_file_header));
-							memcpy(records, file_content + sizeof(table_file_header), header->file_size - sizeof(table_file_header));
+
+							records = file_content + sizeof(table_file_header);
 
 							int col_types[table->num_columns];
 							int i;
-							cd_entry* cur_col = ((void *) table) + 36;
+							cd_entry* cur_col = (cd_entry *) (((void *) table) + 36);
 							for (i = 0; i < table->num_columns; i++, cur_col += sizeof(cd_entry))
 								col_types[i] = cur_col->col_type;
 						
@@ -444,14 +450,28 @@ int sem_select(token_list *t_list)
 								for (j = 0; j < table->num_columns; j++)
 								{
 									if (col_types[i] == 10) // this is an INT
-										printf("", );
-									curr_value += 1 + curr_value;
-									// TODO
+									{
+										printf("%d, ", (int *) curr_value + 1);
+										curr_value += 5;
+									}
+									else // this is a CHAR or VARCHAR
+									{
+										char* char_length = (char *) curr_value;
+										int curr_length = *char_length;
+										char* temp_string = (char *) calloc(curr_length + 1, sizeof(char));
+										memcpy(temp_string, curr_value + 1, curr_length);
+										printf("%s, ", temp_string);
+										free(temp_string);
+										curr_value += curr_length + 1;
+									}
 								}
-								
+								printf("\n");
 							}
+							free(header);
 						}
+						free(file_content);
 					}
+					free(file_name);
 				}
 			}
 		}
