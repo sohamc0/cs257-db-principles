@@ -333,6 +333,12 @@ int do_semantic(token_list *tok_list)
 		cur_cmd = SELECT;
 		cur = cur->next; // should be now the "*" character
 	}
+	else if ((cur->tok_value == K_INSERT) && (cur->next != NULL) && (cur->next->tok_value == K_INTO))
+	{
+		printf("INSERT statement\n");
+		cur_cmd = INSERT;
+		cur = cur->next->next; // should be now the table_name token
+	}
 	else
   	{
 		printf("Invalid statement\n");
@@ -357,12 +363,244 @@ int do_semantic(token_list *tok_list)
 						break;
 			case SELECT:
 						rc = sem_select(cur);
-						break;		
+						break;
+			case INSERT:
+						rc = sem_insert(cur);
+						break;
 			default:
 					; /* no action */
 		}
 	}
 	
+	return rc;
+}
+
+int sem_insert(token_list *t_list)
+{
+	int rc = 0;
+	token_list *cur;
+	FILE *fhandle = NULL;
+	tpd_entry* table = NULL;
+	struct stat file_stat;
+
+	cur = t_list;
+	if ((cur->tok_class != keyword) &&
+		  (cur->tok_class != identifier) &&
+			(cur->tok_class != type_name))
+	{
+		// Error
+		rc = INVALID_TABLE_NAME;
+		cur->tok_value = INVALID;
+	}
+	else
+	{
+		if (((table = get_tpd_from_list(cur->tok_string)) == NULL) || (cur->next == NULL) || (cur->next->tok_value != K_VALUES))
+		{
+			rc = TABLE_NOT_EXIST;
+			cur->tok_value = INVALID;
+		}
+		else
+		{
+			// now checking if table doesn't already have 100 records
+			char* file_name = (char *) calloc(1, strlen(table->table_name) + 5);
+			if (file_name == NULL)
+				rc = MEMORY_ERROR;
+			else
+			{
+				strcpy(file_name, table->table_name);
+				strcat(file_name, ".tab");
+				if((fhandle = fopen(file_name, "rbc")) == NULL)
+					rc = FILE_OPEN_ERROR;
+				else
+				{
+					table_file_header* header = NULL;
+					header = (table_file_header *) malloc(sizeof(table_file_header));
+					if (header == NULL)
+						rc = MEMORY_ERROR;
+					else
+					{
+						fread((void *) header, sizeof(table_file_header), 1, fhandle);
+						if (header->num_records >= 100)
+							rc = INVALID_TABLE_DEFINITION;
+						else
+						{
+							cur = cur->next->next; // now should be on parentheses
+							if ((cur == NULL) || (cur->tok_value != S_LEFT_PAREN))
+							{
+								rc = INVALID_TABLE_DEFINITION;
+								cur->tok_value = INVALID;
+							}
+							else
+							{
+								cur = cur->next; // should be on value for first column now
+
+								int col_types[table->num_columns];
+								int col_lengths[table->num_columns];
+								int i;
+								int record_length = 0;
+								for (i = 0; i < table->num_columns; i++)
+								{
+									cd_entry* curr_col = (cd_entry *) (((i + 1) * 36) + (void *) table); // 36 is size of tpd_entry and cd_entry
+									col_types[i] = curr_col->col_type;
+									col_lengths[i] = curr_col->col_len;
+									record_length += curr_col->col_len + 1;
+								}
+
+								void* record_to_be_added = calloc(1, record_length);
+								int bytes_copied = 0;
+								bool values_correct = true;
+
+								for (i = 0; i < table->num_columns; i++)
+								{
+									if (cur == NULL)
+									{
+										rc = INVALID_TABLE_DEFINITION;
+										cur->tok_value = INVALID;
+										values_correct = false;
+										break;
+									}
+									if ((col_types[i] == T_INT) && (cur->tok_value == INT_LITERAL))
+									{
+										// make sure current token is an INT
+										char result[50];
+										sprintf(result, "%d", atoi(cur->tok_string)); 
+										if (strcmp(cur->tok_string, result) != 0)
+										{
+											rc = INVALID_TABLE_DEFINITION;
+											cur->tok_value = INVALID;
+											values_correct = false;
+											break;
+										}
+										else
+										{
+											// this is indeed a valid integer
+											unsigned char val = 4;
+											memcpy(record_to_be_added + bytes_copied, (void *) &val, 1);
+											bytes_copied++;
+											int val2 = atoi(cur->tok_string);
+											memcpy(record_to_be_added + bytes_copied, &val2, 4);
+											bytes_copied += 4;
+											cur = cur->next;
+										}
+									}
+									else if (((col_types[i] == T_CHAR) && (cur->tok_value == STRING_LITERAL)) || 
+										((col_types[i] == T_VARCHAR) && (cur->tok_value == STRING_LITERAL)))// must be CHAR or VARCHAR
+									{
+										if ((strlen(cur->tok_string) > col_lengths[i]) || 
+											((col_types[i] == T_CHAR) && (strlen(cur->tok_string) != col_lengths[i])))
+										{
+											rc = INVALID_TABLE_DEFINITION;
+											cur->tok_value = INVALID;
+											values_correct = false;
+											break;
+										}
+										else
+										{
+											unsigned char val = col_lengths[i];
+											memcpy(record_to_be_added + bytes_copied, (void *) &val, 1);
+											bytes_copied++;
+											memcpy(record_to_be_added + bytes_copied, cur->tok_string, col_lengths[i]);
+											bytes_copied += col_lengths[i];
+											cur = cur->next;
+										}
+									}
+									else
+									{
+										rc = INVALID_TABLE_DEFINITION;
+										cur->tok_value = INVALID;
+										values_correct = false;
+										break;
+									}
+
+									if ((i < table->num_columns - 1) && ((cur == NULL) || (cur->tok_value != S_COMMA)))
+									{
+										rc = INVALID_TABLE_DEFINITION;
+										cur->tok_value = INVALID;
+										values_correct = false;
+										break;
+									}
+									else if ((i == table->num_columns - 1) && ((cur == NULL) || (cur->tok_value != S_RIGHT_PAREN)))
+									{
+										rc = INVALID_TABLE_DEFINITION;
+										cur->tok_value = INVALID;
+										values_correct = false;
+										break;
+									}
+									else
+										cur = cur->next;
+								}
+
+
+								if (values_correct == true)
+								{
+									// now we can write to the table file
+									char* file_name = (char *) calloc(1, strlen(table->table_name) + 5);
+									if (file_name == NULL)
+										rc = MEMORY_ERROR;
+									else
+									{
+										strcpy(file_name, table->table_name);
+										strcat(file_name, ".tab");
+										if((fhandle = fopen(file_name, "rbc")) == NULL)
+											rc = FILE_OPEN_ERROR;
+										else
+										{
+											table_file_header* header = NULL;
+											header = (table_file_header *) malloc(sizeof(table_file_header));
+											if (header == NULL)
+												rc = MEMORY_ERROR;
+											else
+											{
+												fread((void *) header, sizeof(table_file_header), 1, fhandle);
+												void* prev_content = NULL;
+												prev_content = malloc(sizeof(table_file_header) + (header->num_records * header->record_size));
+												if (prev_content == NULL)
+													rc = MEMORY_ERROR;
+												else
+												{
+													fread(prev_content, header->num_records * header->record_size, 1, fhandle);
+													header->num_records++;
+													void* remaining_records = calloc(100 - header->num_records, header->record_size);
+													fclose(fhandle);
+													if ((fhandle = fopen(file_name, "wbc")) == NULL)
+														rc = FILE_OPEN_ERROR;
+													else
+													{
+														if (remaining_records == NULL)
+															rc = MEMORY_ERROR;
+														else
+														{
+															fwrite(header, sizeof(table_file_header), 1, fhandle);
+															if (header->num_records >= 2)
+																fwrite(prev_content, (header->num_records - 1) * header->record_size, 1, fhandle);
+															fwrite(record_to_be_added, header->record_size, 1, fhandle);
+															fwrite(remaining_records, header->record_size, 100 - header->num_records, fhandle);
+					
+															fflush(fhandle);
+															fclose(fhandle);
+														}
+													}
+													free(remaining_records);
+												}
+												free(prev_content);
+											}
+											free(header);
+										}
+									}
+									free(file_name);
+									
+								}
+								free(record_to_be_added);
+							}
+						}
+					}
+				}
+			}
+
+			
+		}
+	}	
+
 	return rc;
 }
 
@@ -451,15 +689,15 @@ int sem_select(token_list *t_list)
 								{
 									if (col_types[i] == 10) // this is an INT
 									{
-										printf("%d, ", (int *) curr_value + 1);
+										printf("%d, ", (int *) (curr_value + 1));
 										curr_value += 5;
 									}
 									else // this is a CHAR or VARCHAR
 									{
-										char* char_length = (char *) curr_value;
+										unsigned char* char_length = (unsigned char *) curr_value;
 										int curr_length = *char_length;
 										char* temp_string = (char *) calloc(curr_length + 1, sizeof(char));
-										memcpy(temp_string, curr_value + 1, curr_length);
+										strncpy(temp_string, (char *) (curr_value + 1), curr_length);
 										printf("%s, ", temp_string);
 										free(temp_string);
 										curr_value += curr_length + 1;
@@ -1115,7 +1353,7 @@ int add_tpd_to_list(tpd_entry *tpd)
 			g_tpd_list->num_tables++;
 			g_tpd_list->list_size += tpd->tpd_size;
 			
-			void* combined_tables = malloc(g_tpd_list->list_size); // 12 is subtracted because of the 3 int fields part of tpd_list
+			void* combined_tables = malloc(g_tpd_list->list_size); 
 			if (combined_tables == NULL)
 			{
 				rc = MEMORY_ERROR;
