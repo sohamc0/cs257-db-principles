@@ -218,7 +218,7 @@ int get_token(char* command, token_list** tok_list)
 		}
 	    else if (*cur == '\'')
 	    {
-	      /* Find STRING_LITERRAL */
+	      /* Find STRING_LITERAL */
 			int t_class;
 	      	cur++;
 			do 
@@ -441,6 +441,7 @@ int sem_delete(token_list *t_list)
 							else
 							{
 								int curr_col_id = 0;
+								int offset = 0;
 								cd_entry* first_col_entry = (cd_entry *) ((void *) table + 36);
 								cd_entry* curr_col_entry = NULL;
 								bool valid_col_name = false;
@@ -454,6 +455,7 @@ int sem_delete(token_list *t_list)
 										// curr_col_entry will now have the desired column entry
 									}
 									curr_col_id++;
+									offset += curr_col_entry->col_len + 1;
 								}
 
 								if (valid_col_name == false)
@@ -465,7 +467,57 @@ int sem_delete(token_list *t_list)
 									// should now be on relational operator
 									if ((cur == NULL) || (cur->token_class != symbol) || 
 										((cur->token_value != S_EQUAL) && (cur->token_value != S_LESS) && (cur->token_value != S_GREATER)))
-										rc = 
+										rc = INVALID_RELATION;
+									else
+									{
+										token_value relation = cur->token_value;
+										cur = cur->next; // should now be on right hand side of comparison
+										if (cur == NULL)
+											rc = INVALID_TABLE_DEFINITION;
+										else
+										{
+											int record_index;
+											void* existing_records = malloc(header->record_size * header->num_records);
+											if (existing_records == NULL)
+												rc = MEMORY_ERROR;
+											else
+											{
+												fread(existing_records, header->num_records, header->record_size, fhandle);
+												curr_val = existing_records + offset + 1;
+
+												if (cur->tok_value == STRING_LITERAL)
+												{
+													if (((curr_col_entry->col_type != T_VARCHAR) && (curr_col_entry->col_type != T_CHAR)) || 
+														(relation != S_EQUAL))
+														rc = INVALID_TABLE_DEFINITION;
+													else
+													{
+														int num_records_deleted = 0;
+														for (record_index = 0; record_index < header->num_records; record_index++)
+														{
+															if (strncmp((char *) (curr_val + (record_index * header->record_size)), cur->tok_string, strlen(cur->tok_string)) == 0)
+															{
+																num_records_deleted++;
+																// TODO
+															}
+														}
+														printf("WARNING: No row found!\n");
+													}
+												}
+												else if (cur->tok_value == INT_LITERAL)
+												{
+													if (curr_col_entry->col_type != T_INT)
+														rc = INVALID_TABLE_DEFINITION;
+													else
+													{
+														
+													}
+												}
+												else
+													rc = INVALID_TABLE_DEFINITION;
+											}
+										}
+									}
 								}
 							}
 						}
