@@ -281,7 +281,7 @@ void add_to_list(token_list **tok_list, char *tmp, int t_class, int t_value)
 	ptr->tok_value = t_value;
 	ptr->next = NULL;
 
-  if (cur == NULL)
+  	if (cur == NULL)
 		*tok_list = ptr;
 	else
 	{
@@ -339,6 +339,12 @@ int do_semantic(token_list *tok_list)
 		cur_cmd = INSERT;
 		cur = cur->next->next; // should be now the table_name token
 	}
+	else if ((cur->tok_value == K_DELETE) && (cur->next != NULL) && (cur->next->tok_value == K_FROM))
+	{
+		printf("DELETE statement\n");
+		cur_cmd = DELETE;
+		cur = cur->next->next; // should be now the table_name token
+	}
 	else
   	{
 		printf("Invalid statement\n");
@@ -367,11 +373,107 @@ int do_semantic(token_list *tok_list)
 			case INSERT:
 						rc = sem_insert(cur);
 						break;
+			case DELETE:
+						rc = sem_delete(cur);
+						break;
 			default:
 					; /* no action */
 		}
 	}
 	
+	return rc;
+}
+
+int sem_delete(token_list *t_list)
+{
+	int rc = 0;
+	token_list *cur;
+	FILE *fhandle = NULL;
+	tpd_entry* table = NULL;
+	struct stat file_stat;
+
+	cur = t_list;
+	if ((cur == NULL) || ((cur->tok_class != keyword) &&
+		  (cur->tok_class != identifier) &&
+			(cur->tok_class != type_name)))
+	{
+		// Error
+		rc = INVALID_TABLE_NAME;
+		cur->tok_value = INVALID;
+	}
+	else
+	{
+		if (((table = get_tpd_from_list(cur->tok_string)) == NULL) || (cur->next == NULL) || (cur->next->tok_value != K_WHERE))
+		{
+			rc = TABLE_NOT_EXIST;
+			cur->tok_value = INVALID;
+		}
+		else
+		{
+			cur = cur->next->next; // now should be on col_name
+			// opening table file
+			char* file_name = (char *) calloc(1, strlen(table->table_name) + 5);
+			if (file_name == NULL)
+				rc = MEMORY_ERROR;
+			else
+			{
+				strcpy(file_name, table->table_name);
+				strcat(file_name, ".tab");
+				if((fhandle = fopen(file_name, "rbc")) == NULL)
+					rc = FILE_OPEN_ERROR;
+				else
+				{
+					// succesfully opened table file
+					table_file_header* header = NULL;
+					header = (table_file_header *) malloc(sizeof(table_file_header));
+					if (header == NULL)
+						rc = MEMORY_ERROR;
+					else
+					{
+						fread((void *) header, sizeof(table_file_header), 1, fhandle);
+						if (header->num_records == 0)
+							printf("WARNING: No row found!\n");
+						else
+						{
+							// let's see if column name is even valid
+							if (cur == NULL)
+								rc = INVALID_COLUMN_NAME;
+							else
+							{
+								int curr_col_id = 0;
+								cd_entry* first_col_entry = (cd_entry *) ((void *) table + 36);
+								cd_entry* curr_col_entry = NULL;
+								bool valid_col_name = false;
+								while (curr_col_id < table->num_columns)
+								{
+									curr_col_entry = (cd_entry *) ((void *) first_col_entry + (curr_col_id * sizeof(cd_entry)));
+									if (strcmp(curr_col_entry->col_name, cur->tok_string) == 0)
+									{
+										valid_col_name = true;
+										break;
+										// curr_col_entry will now have the desired column entry
+									}
+									curr_col_id++;
+								}
+
+								if (valid_col_name == false)
+									rc = INVALID_COLUMN_NAME;
+								else
+								{
+									// column name is valid
+									cur = cur->next;
+									// should now be on relational operator
+									if ((cur == NULL) || (cur->token_class != symbol) || 
+										((cur->token_value != S_EQUAL) && (cur->token_value != S_LESS) && (cur->token_value != S_GREATER)))
+										rc = 
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	return rc;
 }
 
@@ -384,9 +486,9 @@ int sem_insert(token_list *t_list)
 	struct stat file_stat;
 
 	cur = t_list;
-	if ((cur->tok_class != keyword) &&
+	if ((cur == NULL) && ((cur->tok_class != keyword) &&
 		  (cur->tok_class != identifier) &&
-			(cur->tok_class != type_name))
+			(cur->tok_class != type_name)))
 	{
 		// Error
 		rc = INVALID_TABLE_NAME;
