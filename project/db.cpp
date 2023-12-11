@@ -465,12 +465,12 @@ int sem_delete(token_list *t_list)
 									// column name is valid
 									cur = cur->next;
 									// should now be on relational operator
-									if ((cur == NULL) || (cur->token_class != symbol) || 
-										((cur->token_value != S_EQUAL) && (cur->token_value != S_LESS) && (cur->token_value != S_GREATER)))
+									if ((cur == NULL) || (cur->tok_class != symbol) || 
+										((cur->tok_value != S_EQUAL) && (cur->tok_value != S_LESS) && (cur->tok_value != S_GREATER)))
 										rc = INVALID_RELATION;
 									else
 									{
-										token_value relation = cur->token_value;
+										token_value relation = (token_value) cur->tok_value;
 										cur = cur->next; // should now be on right hand side of comparison
 										if (cur == NULL)
 											rc = INVALID_TABLE_DEFINITION;
@@ -483,7 +483,8 @@ int sem_delete(token_list *t_list)
 											else
 											{
 												fread(existing_records, header->num_records, header->record_size, fhandle);
-												curr_val = existing_records + offset + 1;
+                                                fclose(fhandle);
+												void* curr_val = existing_records + offset + 1;
 
 												if (cur->tok_value == STRING_LITERAL)
 												{
@@ -493,15 +494,45 @@ int sem_delete(token_list *t_list)
 													else
 													{
 														int num_records_deleted = 0;
+														int deletion_indices[header->num_records];
+
 														for (record_index = 0; record_index < header->num_records; record_index++)
 														{
 															if (strncmp((char *) (curr_val + (record_index * header->record_size)), cur->tok_string, strlen(cur->tok_string)) == 0)
 															{
-																num_records_deleted++;
-																// TODO
+																deletion_indices[num_records_deleted] = record_index;
+																num_records_deleted++;											
 															}
 														}
-														printf("WARNING: No row found!\n");
+														// now we know the row numbers which need to be deleted
+                                                        header->num_records -= num_records_deleted;
+
+														if (num_records_deleted == 0)
+															printf("WARNING: No row found!\n");
+														else
+														{
+															int need_to_delete_index = 0;
+															fhandle = fopen(file_name, "wbc");
+                                                            fwrite(header, sizeof(table_file_header), 1, fhandle);
+                                                            int i;
+                                                            for (i = 0; i < header->num_records + num_records_deleted; i++)
+                                                            {
+                                                                if (i == deletion_indices[need_to_delete_index])
+                                                                    need_to_delete_index++;
+                                                                else
+                                                                {
+                                                                    fwrite(existing_records + (i * header->record_size), header->record_size, 1, fhandle);
+                                                                }
+                                                            }
+
+                                                            // now we fill in blank remaining records
+
+                                                            void* blank_remaining_records = calloc(100 - header->num_records, header->record_size);
+                                                            fwrite(blank_remaining_records, 100 - header->num_records, header->record_size, fhandle);
+                                                            free(blank_remaining_records);
+                                                            fflush(fhandle);
+                                                            fclose(fhandle);
+														}
 													}
 												}
 												else if (cur->tok_value == INT_LITERAL)
@@ -510,20 +541,65 @@ int sem_delete(token_list *t_list)
 														rc = INVALID_TABLE_DEFINITION;
 													else
 													{
-														
+														int num_records_deleted = 0;
+														int deletion_indices[header->num_records];
+
+														for (record_index = 0; record_index < header->num_records; record_index++)
+														{
+                                                            int curr_int = *((int *) (curr_val + (record_index * header->record_size)));
+                                                            if (((relation == S_EQUAL) && (atoi(cur->tok_string) == curr_int)) ||
+                                                                ((relation == S_LESS) && (curr_int < atoi(cur->tok_string))) ||
+                                                                ((relation == S_GREATER) && (curr_int > atoi(cur->tok_string))))
+                                                            {
+                                                                deletion_indices[num_records_deleted] = record_index;
+																num_records_deleted++;	
+                                                            }
+														}
+														// now we know the row numbers which need to be deleted
+                                                        header->num_records -= num_records_deleted;
+
+														if (num_records_deleted == 0)
+															printf("WARNING: No row found!\n");
+														else
+														{
+															int need_to_delete_index = 0;
+															fhandle = fopen(file_name, "wbc");
+                                                            fwrite(header, sizeof(table_file_header), 1, fhandle);
+                                                            int i;
+                                                            for (i = 0; i < header->num_records + num_records_deleted; i++)
+                                                            {
+                                                                if (i == deletion_indices[need_to_delete_index])
+                                                                    need_to_delete_index++;
+                                                                else
+                                                                {
+                                                                    fwrite(existing_records + (i * header->record_size), header->record_size, 1, fhandle);
+                                                                }
+                                                            }
+
+                                                            // now we fill in blank remaining records
+
+                                                            void* blank_remaining_records = calloc(100 - header->num_records, header->record_size);
+                                                            fwrite(blank_remaining_records, 100 - header->num_records, header->record_size, fhandle);
+                                                            free(blank_remaining_records);
+                                                            fflush(fhandle);
+                                                            fclose(fhandle);
+														}
 													}
 												}
 												else
 													rc = INVALID_TABLE_DEFINITION;
 											}
+                                            free(existing_records);
 										}
 									}
 								}
 							}
 						}
 					}
+                    free(header);
 				}
 			}
+            free(file_name);
 		}
 	}
 	return rc;
