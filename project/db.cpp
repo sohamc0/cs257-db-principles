@@ -485,6 +485,8 @@ int sem_update(token_list *t_list)
 											(((curr_col_entry->col_type == T_CHAR) || (curr_col_entry->col_type == T_VARCHAR)) && (cur->tok_value == STRING_LITERAL)))
 										{
 											char* desired_data_value = cur->tok_string;
+											int desired_data_type = cur->tok_value;
+
 											cur = cur->next; // should now be on WHERE
 											if ((cur == NULL) || (cur->tok_value != K_WHERE) || (cur->next == NULL))
 												rc = INVALID_COMMAND;
@@ -568,7 +570,21 @@ int sem_update(token_list *t_list)
 				                                                            {
 				                                                                int curr_row_id = matched_indices[i];
 				                                                                void* change_this_item = existing_records + (curr_row_id * header->record_size) + offset + 1;
-				                                                                memcpy(change_this_item, desired_data_value, curr_col_entry->col_len);
+
+				                                                                if (desired_data_type == 90) // this is an INT
+				                                                                {
+				                                                                	int* new_int = (int *) malloc(sizeof(int));
+				                                                                	int int_value = atoi(desired_data_value);
+
+				                                                                	memcpy((void *) new_int, &int_value, sizeof(int));
+				                                                                	memcpy(change_this_item, (void *) new_int, sizeof(int));
+				                                                                	free(new_int);
+				                                                                }
+				                                                                else // must be CHAR or VARCHAR
+				                                                                {
+				                                                                	memset(change_this_item, '\0', curr_col_entry->col_len);
+				                                                                	memcpy(change_this_item, desired_data_value, strlen(desired_data_value));
+				                                                                }
 				                                                            }
 
 				                                                            // now we write the updated existing_records...
@@ -617,7 +633,21 @@ int sem_update(token_list *t_list)
 				                                                            {
 				                                                                int curr_row_id = matching_indices[i];
 				                                                                void* change_this_item = existing_records + (curr_row_id * header->record_size) + offset + 1;
-				                                                                memcpy(change_this_item, desired_data_value, curr_col_entry->col_len);
+				                                                                
+				                                                                if (desired_data_type == 90) // this is an INT
+				                                                                {
+				                                                                	int* new_int = (int *) malloc(sizeof(int));
+				                                                                	int int_value = atoi(desired_data_value);
+
+				                                                                	memcpy((void *) new_int, &int_value, sizeof(int));
+				                                                                	memcpy(change_this_item, (void *) new_int, sizeof(int));
+				                                                                	free(new_int);
+				                                                                }
+				                                                                else // must be CHAR or VARCHAR
+				                                                                {
+				                                                                	memset(change_this_item, '\0', curr_col_entry->col_len);
+				                                                                	memcpy(change_this_item, desired_data_value, strlen(desired_data_value));
+				                                                                }
 				                                                            }
 				                                                            // now we write the updated existing_records...
 				                                                            fwrite(existing_records, header->num_records, header->record_size, fhandle);
