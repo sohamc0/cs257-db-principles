@@ -345,6 +345,12 @@ int do_semantic(token_list *tok_list)
 		cur_cmd = DELETE;
 		cur = cur->next->next; // should be now the table_name token
 	}
+	else if (cur->tok_value == K_UPDATE)
+	{
+		printf("UPDATE statement\n");
+		cur_cmd = UPDATE;
+		cur = cur->next; // should be now the table_name token
+	}
 	else
   	{
 		printf("Invalid statement\n");
@@ -376,12 +382,278 @@ int do_semantic(token_list *tok_list)
 			case DELETE:
 						rc = sem_delete(cur);
 						break;
+			case UPDATE:
+						rc = sem_update(cur);
+						break;
 			default:
 					; /* no action */
 		}
 	}
 	
 	return rc;
+}
+
+int sem_update(token_list *t_list)
+{
+	int rc = 0;
+	token_list *cur;
+	FILE *fhandle = NULL;
+	tpd_entry* table = NULL;
+	struct stat file_stat;
+
+	cur = t_list;
+	if ((cur == NULL) || ((cur->tok_class != keyword) &&
+		  (cur->tok_class != identifier) &&
+			(cur->tok_class != type_name)))
+	{
+		// Error
+		rc = INVALID_TABLE_NAME;
+		cur->tok_value = INVALID;
+	}
+	else
+	{
+		if (((table = get_tpd_from_list(cur->tok_string)) == NULL) || (cur->next == NULL) || (cur->next->tok_value != K_SET))
+		{
+			rc = TABLE_NOT_EXIST;
+			cur->tok_value = INVALID;
+		}
+		else
+		{
+			cur = cur->next->next; // now should be on col_name
+			// opening table file
+			char* file_name = (char *) calloc(1, strlen(table->table_name) + 5);
+			if (file_name == NULL)
+				rc = MEMORY_ERROR;
+			else
+			{
+				strcpy(file_name, table->table_name);
+				strcat(file_name, ".tab");
+				if((fhandle = fopen(file_name, "rbc")) == NULL)
+					rc = FILE_OPEN_ERROR;
+				else
+				{
+					// succesfully opened table file
+					table_file_header* header = NULL;
+					header = (table_file_header *) malloc(sizeof(table_file_header));
+					if (header == NULL)
+						rc = MEMORY_ERROR;
+					else
+					{
+						fread((void *) header, sizeof(table_file_header), 1, fhandle);
+						if (header->num_records == 0)
+							printf("WARNING: No row found!\n");
+						else
+						{
+							// let's see if column name is even valid
+							if (cur == NULL)
+								rc = INVALID_COLUMN_NAME;
+							else
+							{
+								int curr_col_id = 0;
+								int offset = 0;
+								cd_entry* first_col_entry = (cd_entry *) ((void *) table + 36);
+								cd_entry* curr_col_entry = NULL;
+								bool valid_col_name = false;
+								while (curr_col_id < table->num_columns)
+								{
+									curr_col_entry = (cd_entry *) ((void *) first_col_entry + (curr_col_id * sizeof(cd_entry)));
+									if (strcmp(curr_col_entry->col_name, cur->tok_string) == 0)
+									{
+										valid_col_name = true;
+										break;
+										// curr_col_entry will now have the desired column entry
+									}
+									curr_col_id++;
+									offset += curr_col_entry->col_len + 1;
+								}
+
+								if (valid_col_name == false)
+									rc = INVALID_COLUMN_NAME;
+								else
+								{
+									// column name is valid
+									cur = cur->next;
+									// should now be on relational operator (which should be the '=' sign)
+									if ((cur == NULL) || (cur->tok_class != symbol) || (cur->tok_value != S_EQUAL) ||
+										(cur->next == NULL) || 
+										((cur->next->tok_value != INT_LITERAL) && (cur->next->tok_value != STRING_LITERAL)))
+										rc = INVALID_RELATION;
+									else
+									{
+										cur = cur->next; // should now be on desired data value
+										if (((curr_col_entry->col_type == T_INT) && (cur->tok_value == INT_LITERAL)) ||
+											(((curr_col_entry->col_type == T_CHAR) || (curr_col_entry->col_type == T_VARCHAR)) && (cur->tok_value == STRING_LITERAL)))
+										{
+											char* desired_data_value = cur->tok_string;
+											cur = cur->next; // should now be on WHERE
+											if ((cur == NULL) || (cur->tok_value != K_WHERE) || (cur->next == NULL))
+												rc = INVALID_COMMAND;
+											else
+											{
+												cur = cur->next; // should now be on comparing column name
+												curr_col_id = 0;
+												int comp_offset = 0;
+												cd_entry* first_comp_col_entry = (cd_entry *) ((void *) table + 36);
+												cd_entry* curr_comp_col_entry = NULL;
+												valid_col_name = false;
+												while (curr_col_id < table->num_columns)
+												{
+													curr_comp_col_entry = (cd_entry *) ((void *) first_comp_col_entry + (curr_col_id * sizeof(cd_entry)));
+													if (strcmp(curr_comp_col_entry->col_name, cur->tok_string) == 0)
+													{
+														valid_col_name = true;
+														break;
+														// curr_col_entry will now have the desired column entry
+													}
+													curr_col_id++;
+													comp_offset += curr_comp_col_entry->col_len + 1;
+												}
+
+												if (valid_col_name == false)
+													rc = INVALID_COLUMN_NAME;
+												else
+												{
+													// column name is valid
+													cur = cur->next;
+													// should now be on relational operator
+													if ((cur == NULL) || (cur->tok_class != symbol) || 
+														((cur->tok_value != S_EQUAL) && (cur->tok_value != S_LESS) && (cur->tok_value != S_GREATER)))
+														rc = INVALID_RELATION;
+													else
+													{
+														token_value relation = (token_value) cur->tok_value;
+														cur = cur->next; // should now be on right hand side of comparison
+														if (cur == NULL)
+															rc = INVALID_TABLE_DEFINITION;
+														else
+														{
+															int record_index;
+															void* existing_records = malloc(header->record_size * header->num_records);
+															if (existing_records == NULL)
+																rc = MEMORY_ERROR;
+															else
+															{
+																fread(existing_records, header->num_records, header->record_size, fhandle);
+				                                                fclose(fhandle);
+																void* curr_val = existing_records + comp_offset + 1;
+
+																if (cur->tok_value == STRING_LITERAL)
+																{
+																	if (((curr_comp_col_entry->col_type != T_VARCHAR) && (curr_comp_col_entry->col_type != T_CHAR)) || 
+																		(relation != S_EQUAL))
+																		rc = INVALID_TABLE_DEFINITION;
+																	else
+																	{
+																		int num_records_matching = 0;
+																		int matched_indices[header->num_records];
+
+																		for (record_index = 0; record_index < header->num_records; record_index++)
+																		{
+																			if (strncmp((char *) (curr_val + (record_index * header->record_size)), cur->tok_string, strlen(cur->tok_string)) == 0)
+																			{
+																				matched_indices[num_records_matching] = record_index;
+																				num_records_matching++;											
+																			}
+																		}
+																		// now we know the row numbers which need to be updated
+
+																		if (num_records_matching == 0)
+																			printf("WARNING: No row found!\n");
+																		else
+																		{
+																			fhandle = fopen(file_name, "wbc");
+				                                                            fwrite(header, sizeof(table_file_header), 1, fhandle);
+				                                                            int i;
+				                                                            for (i = 0; i < num_records_matching; i++)
+				                                                            {
+				                                                                int curr_row_id = matched_indices[i];
+				                                                                void* change_this_item = existing_records + (curr_row_id * header->record_size) + offset + 1;
+				                                                                memcpy(change_this_item, desired_data_value, curr_col_entry->col_len);
+				                                                            }
+
+				                                                            // now we write the updated existing_records...
+				                                                            fwrite(existing_records, header->num_records, header->record_size, fhandle);
+
+				                                                            // now we fill in blank remaining records
+
+				                                                            void* blank_remaining_records = calloc(100 - header->num_records, header->record_size);
+				                                                            fwrite(blank_remaining_records, 100 - header->num_records, header->record_size, fhandle);
+				                                                            free(blank_remaining_records);
+				                                                            fflush(fhandle);
+				                                                            fclose(fhandle);
+																		}
+																	}
+																}
+																else if (cur->tok_value == INT_LITERAL)
+																{
+																	if (curr_comp_col_entry->col_type != T_INT)
+																		rc = INVALID_TABLE_DEFINITION;
+																	else
+																	{
+																		int num_records_matched = 0;
+																		int matching_indices[header->num_records];
+
+																		for (record_index = 0; record_index < header->num_records; record_index++)
+																		{
+				                                                            int curr_int = *((int *) (curr_val + (record_index * header->record_size)));
+				                                                            if (((relation == S_EQUAL) && (atoi(cur->tok_string) == curr_int)) ||
+				                                                                ((relation == S_LESS) && (curr_int < atoi(cur->tok_string))) ||
+				                                                                ((relation == S_GREATER) && (curr_int > atoi(cur->tok_string))))
+				                                                            {
+				                                                                matching_indices[num_records_matched] = record_index;
+																				num_records_matched++;	
+				                                                            }
+																		}
+																		// now we know the row numbers which need to be updated
+
+																		if (num_records_matched == 0)
+																			printf("WARNING: No row found!\n");
+																		else
+																		{
+																			fhandle = fopen(file_name, "wbc");
+				                                                            fwrite(header, sizeof(table_file_header), 1, fhandle);
+				                                                            int i;
+				                                                            for (i = 0; i < num_records_matched; i++)
+				                                                            {
+				                                                                int curr_row_id = matching_indices[i];
+				                                                                void* change_this_item = existing_records + (curr_row_id * header->record_size) + offset + 1;
+				                                                                memcpy(change_this_item, desired_data_value, curr_col_entry->col_len);
+				                                                            }
+				                                                            // now we write the updated existing_records...
+				                                                            fwrite(existing_records, header->num_records, header->record_size, fhandle);
+
+				                                                            // now we fill in blank remaining records
+
+				                                                            void* blank_remaining_records = calloc(100 - header->num_records, header->record_size);
+				                                                            fwrite(blank_remaining_records, 100 - header->num_records, header->record_size, fhandle);
+				                                                            free(blank_remaining_records);
+				                                                            fflush(fhandle);
+				                                                            fclose(fhandle);
+																		}
+																	}
+																}
+																else
+																	rc = INVALID_TABLE_DEFINITION;
+															}
+															free(existing_records);
+														}
+													}
+												}
+											}
+										}
+										else
+											rc = INVALID_RELATION;
+									}
+								}
+							} 
+						}
+					}
+					free(header);
+				}
+			}
+			free(file_name);
+		}
+	}
 }
 
 int sem_delete(token_list *t_list)
@@ -841,7 +1113,6 @@ int sem_select(token_list *t_list)
 	token_list *cur;
 	FILE *fhandle = NULL;
 	tpd_entry* table = NULL;
-	struct stat file_stat;
 
 	cur = t_list;
 	if ((cur->tok_value != S_STAR) || (cur->next == NULL) || (cur->next->tok_value != K_FROM))
@@ -882,7 +1153,6 @@ int sem_select(token_list *t_list)
 					/* Found a valid tpd, now print all its tuples */
 					char* table_name = cur->tok_string;
 					char* file_name = (char *) malloc(strlen(table_name) + 5);
-					void* file_content = NULL;
 					table_file_header* header = NULL;
 					void* records = NULL;
 					strcpy(file_name, table_name);
@@ -891,53 +1161,66 @@ int sem_select(token_list *t_list)
 						rc = FILE_OPEN_ERROR;
 					else
 					{
-						file_content = calloc(1, file_stat.st_size);
-						if (file_content == NULL)
+						header = (table_file_header *) malloc(sizeof(table_file_header));
+						if (header == NULL)
 							rc = MEMORY_ERROR;
 						else
 						{
-							fread(file_content, file_stat.st_size, 1, fhandle);
-
-							header = (table_file_header*) malloc(sizeof(table_file_header));
-							memcpy(header, file_content, sizeof(table_file_header));
-
-							records = file_content + sizeof(table_file_header);
+							fread(header, sizeof(table_file_header), 1, fhandle);
+							records = calloc(header->record_size, header->num_records);
+							fread(records, header->record_size, header->num_records, fhandle);
 
 							int col_types[table->num_columns];
 							int i;
 							cd_entry* cur_col = (cd_entry *) (((void *) table) + 36);
-							for (i = 0; i < table->num_columns; i++, cur_col += sizeof(cd_entry))
-								col_types[i] = cur_col->col_type;
+
+							for (i = 0; i < table->num_columns; i++)
+								col_types[i] = ((cd_entry *) ((void *) cur_col + (i * sizeof(cd_entry))))->col_type;
 						
 							void* curr_record = records;
 							
-							for (i = 0; i < header->num_records; i++, curr_record += header->record_size) // for each record...
+							for (i = 0; i < header->num_records; i++) // for each record...
 							{
 								int j;
 								void* curr_value = curr_record;
 								for (j = 0; j < table->num_columns; j++)
 								{
-									if (col_types[i] == 10) // this is an INT
+									if (col_types[j] == 10) // this is an INT
 									{
-										printf("%d, ", (int *) (curr_value + 1));
-										curr_value += 5;
+										int* curr_int = (int *) malloc(sizeof(int));
+										curr_value += 1; // should now be on start of int's 4 bytes
+										memcpy(curr_int, curr_value, sizeof(int));
+
+										printf("%d, ", *curr_int);
+										
+										free(curr_int);
+										if (j < table->num_columns - 1)
+											curr_value += 4; 
 									}
-									else // this is a CHAR or VARCHAR
+									else if ((col_types[j] == 11) || (col_types[j] == 12))// this is a CHAR or VARCHAR
 									{
-										unsigned char* char_length = (unsigned char *) curr_value;
-										int curr_length = *char_length;
-										char* temp_string = (char *) calloc(curr_length + 1, sizeof(char));
-										strncpy(temp_string, (char *) (curr_value + 1), curr_length);
-										printf("%s, ", temp_string);
-										free(temp_string);
-										curr_value += curr_length + 1;
+										unsigned char* str_len = (unsigned char *) calloc(2, 1);
+										memcpy((void *) str_len, curr_value, 1);
+										curr_value += 1; // should now be on start of the string's bytes
+
+										char* this_string = (char *) calloc(((int) *str_len) + 1, 1);
+										memcpy((void *) this_string, curr_value, (int) *str_len);
+										printf("%s, ", this_string);
+
+										free(this_string);
+										if (j < table->num_columns - 1)
+											curr_value += (int) *str_len;
+										free(str_len);
 									}
 								}
 								printf("\n");
+								if (i < header->num_records - 1)
+									curr_record += header->record_size;
 							}
 							free(header);
+							free(records);
 						}
-						free(file_content);
+						fclose(fhandle);
 					}
 					free(file_name);
 				}
